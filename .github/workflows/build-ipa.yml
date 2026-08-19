@@ -1,0 +1,66 @@
+name: Build Aria IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select newest available Xcode
+        run: |
+          latest=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          echo "Using ${latest:-default Xcode}"
+          [ -n "$latest" ] && sudo xcode-select -s "$latest" || true
+          xcodebuild -version
+
+      - name: Show project schemes
+        run: |
+          xcodebuild \
+            -project Aria.xcodeproj \
+            -list
+
+      - name: Build Aria for iPhone
+        run: |
+          xcodebuild \
+            -project Aria.xcodeproj \
+            -scheme "Aria - Music Browser" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Find built app
+        run: |
+          echo "Searching for .app bundle..."
+          find build -name "*.app" -type d
+
+      - name: Package unsigned IPA
+        run: |
+          APP_PATH=$(find build -name "*.app" -type d | head -n 1)
+
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No .app bundle found"
+            exit 1
+          fi
+
+          echo "Using app bundle:"
+          echo "$APP_PATH"
+
+          rm -rf Payload
+          mkdir Payload
+          cp -R "$APP_PATH" Payload/
+
+          zip -r Aria-unsigned.ipa Payload
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Aria-IPA
+          path: Aria-unsigned.ipa
